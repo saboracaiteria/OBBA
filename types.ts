@@ -1,0 +1,105 @@
+
+export interface ProductOption {
+  id: string;
+  name: string;
+  price?: number;
+  description?: string;
+}
+
+export interface ProductGroup {
+  id: string;
+  title: string;
+  min: number;
+  max: number;
+  options: ProductOption[];
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  image: string;
+  categoryId: string;
+  groupIds?: string[]; // IDs of ProductGroups attached to this product
+}
+
+export interface Category {
+  id: string;
+  title: string;
+  icon?: string;
+}
+
+export interface CartItem {
+  cartId: string;
+  product: Product;
+  quantity: number;
+  selectedOptions: Record<string, number>; // optionId -> quantity
+  note?: string;
+  totalPrice: number;
+}
+
+export enum DeliveryMethod {
+  DELIVERY = 'DELIVERY',
+  PICKUP = 'PICKUP',
+}
+
+// Internal Order Record for Admin Panel
+export type OrderStatus = 'pending' | 'preparing' | 'delivery' | 'completed' | 'cancelled';
+
+export interface OrderRecord {
+  id: string;
+  date: string; // ISO String
+  customerName: string;
+  whatsapp: string;
+  method: DeliveryMethod;
+  address?: string; // Formatted address string
+  paymentMethod: string;
+  total: number;
+  itemsSummary: string; // Short summary for list view
+  fullDetails: CartItem[]; // Full cart for re-printing
+  status: OrderStatus;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  active: boolean;
+  usageCount: number;
+}
+
+export interface OpeningHour {
+  dayOfWeek: number; // 0 = Sunday
+  open: string; // HH:MM
+  close: string; // HH:MM
+  enabled: boolean;
+}
+
+export interface ThemeColors {
+  headerBg: string;      // Cor de fundo dos cabeçalhos
+  headerText: string;    // Cor do texto dos cabeçalhos
+  background: string;    // Cor de fundo geral
+  cardBg: string;        // Cor de fundo dos cards/painéis
+  cardText: string;      // Cor do texto nos cards
+  buttonPrimary: string; // Cor dos botões primários
+  buttonText: string;    // Cor do texto dos botões
+  textPrimary: string;   // Cor do texto principal
+  textSecondary: string; // Cor do texto secundário
+}
+
+export interface GlobalSettings {
+  storeName: string;
+  logoUrl: string;
+  logoShape: 'circle' | 'rectangle';
+  bannerUrl: string;
+  whatsappNumber: string;
+  storeStatus: 'open' | 'closed' | 'auto';
+  deliveryFee: number;
+  openingHours: OpeningHour[];
+  deliveryOnly: boolean; // true = only pickup, false = delivery available
+  themeColors?: ThemeColors; // Configurações de cores do tema
+}
+
+export type Role = 'admin' | 'employee' | null;

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste - Rota da Impressora</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4E0797;
+            margin-bottom: 20px;
+        }
+        .step {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #4E0797;
+            border-radius: 4px;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .code {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+        }
+        .success {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ff9800;
+            font-weight: bold;
+        }
+        a {
+            color: #4E0797;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .button {
+            display: inline-block;
+            background: #4E0797;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            margin: 10px 5px;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        .button:hover {
+            background: #6a0bb3;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🖨️ Diagnóstico: Impressora no Painel</h1>
+        
+        <div class="step">
+            <h3>✅ Status da Configuração</h3>
+            <p class="success">A impressora está configurada corretamente no código!</p>
+            <ul>
+                <li>Rota: <code>/panel/printer</code></li>
+                <li>Permissões: Admin e Funcionário</li>
+                <li>Componente: PrinterSettingsPage</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>🔐 Passo 1: Fazer Login</h3>
+            <p>Acesse o painel administrativo usando uma das senhas:</p>
+            <div class="code">
+                Admin: 123<br>
+                Funcionário: 777
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>🔄 Passo 2: Recarregar o Aplicativo</h3>
+            <p>Limpe o cache do navegador:</p>
+            <ul>
+                <li><strong>Windows:</strong> Ctrl + Shift + R ou Ctrl + F5</li>
+                <li><strong>Mac:</strong> Cmd + Shift + R</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>🔍 Passo 3: Verificar Console</h3>
+            <p>Abra o Console do Desenvolvedor:</p>
+            <ul>
+                <li>Pressione <strong>F12</strong></li>
+                <li>Vá para a aba "Console"</li>
+                <li>Procure por erros em vermelho</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>🎯 Acesso Direto</h3>
+            <p>Teste acessando diretamente a rota da impressora:</p>
+            <a href="http://localhost:3000/#/panel/printer" class="button" target="_blank">
+                Abrir Configuração de Impressora
+            </a>
+            <a href="http://localhost:3000/#/panel" class="button" target="_blank">
+                Abrir Painel
+            </a>
+        </div>
+
+        <div class="step">
+            <h3>📋 Checklist de Verificação</h3>
+            <ul>
+                <li>☐ Servidor está rodando (http://localhost:3000)</li>
+                <li>☐ Fiz login com senha 123 ou 777</li>
+                <li>☐ Recarreguei a página sem cache</li>
+                <li>☐ Verifiquei o console por erros</li>
+                <li>☐ Tentei acessar diretamente /panel/printer</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <h3>⚠️ Se ainda não aparecer</h3>
+            <p class="warning">Tire um print da tela do painel e me mostre o que está vendo!</p>
+            <p>Também verifique se há algum erro no console (F12 → Console)</p>
+        </div>
+    </div>
+
+    <script>
+        console.log('%c🖨️ Teste de Rota da Impressora', 'color: #4E0797; font-size: 20px; font-weight: bold;');
+        console.log('%cSe você está vendo esta mensagem, o JavaScript está funcionando!', 'color: #4caf50;');
+        console.log('%cTente acessar: http://localhost:3000/#/panel/printer', 'color: #ff9800; font-size: 14px;');
+    </script>
+</body>
+</html>
