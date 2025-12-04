@@ -28,6 +28,7 @@ export interface Category {
   id: string;
   title: string;
   icon?: string;
+  displayOrder?: number;
 }
 
 export interface CartItem {
@@ -68,6 +69,31 @@ export interface Coupon {
   value: number;
   active: boolean;
   usageCount: number;
+  minOrderValue?: number;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact: string;
+  phone: string;
+}
+
+export interface StockItem {
+  id: string;
+  productId: string; // Link to Product
+  quantity: number;
+  minQuantity: number; // Alert threshold
+  supplierId?: string;
+}
+
+export interface PurchaseRecord {
+  id: string;
+  date: string;
+  supplierId: string;
+  items: { productId: string; quantity: number; cost: number }[];
+  total: number;
+  notes?: string;
 }
 
 export interface OpeningHour {

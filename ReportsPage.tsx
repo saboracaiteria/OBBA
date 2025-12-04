@@ -8,6 +8,8 @@ import {
 } from 'recharts';
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface OrderRecord {
     id: string;
@@ -146,6 +148,41 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ orders }) => {
         await printText(report);
     };
 
+    const handleExportPDF = () => {
+        const doc = new jsPDF();
+
+        doc.setFontSize(18);
+        doc.text('Relatório Financeiro', 14, 22);
+
+        doc.setFontSize(11);
+        doc.text(`Período: ${format(parseISO(startDate), 'dd/MM/yy')} - ${format(parseISO(endDate), 'dd/MM/yy')}`, 14, 30);
+        doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yy HH:mm')}`, 14, 36);
+
+        // Summary
+        doc.text('Resumo:', 14, 45);
+        doc.text(`Receita Total: ${formatCurrency(stats.totalRevenue)}`, 14, 51);
+        doc.text(`Total Pedidos: ${stats.totalOrders}`, 14, 57);
+        doc.text(`Ticket Médio: ${formatCurrency(stats.totalOrders > 0 ? stats.totalRevenue / stats.totalOrders : 0)}`, 14, 63);
+
+        // Table
+        const tableColumn = ["Data", "Pedido", "Pagamento", "Status", "Valor"];
+        const tableRows = filteredOrders.map(order => [
+            format(new Date(order.date), 'dd/MM/yy HH:mm'),
+            `#${order.id}`,
+            order.paymentMethod,
+            order.status,
+            formatCurrency(order.total)
+        ]);
+
+        autoTable(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: 70,
+        });
+
+        doc.save(`relatorio_financeiro_${startDate}_${endDate}.pdf`);
+    };
+
     return (
         <div className="min-h-screen bg-gray-100 p-4 pb-20">
             {/* Header */}
@@ -160,6 +197,12 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ orders }) => {
                         className="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-sm"
                     >
                         <Printer size={20} /> Imprimir
+                    </button>
+                    <button
+                        onClick={handleExportPDF}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-red-700 transition-colors shadow-sm"
+                    >
+                        <FileText size={20} /> PDF
                     </button>
                 </div>
             </div>
@@ -330,7 +373,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({ orders }) => {
                                         <td className="p-3">{order.paymentMethod}</td>
                                         <td className="p-3">
                                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                    order.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                                                order.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                 {order.status}
                                             </span>

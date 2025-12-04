@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, Edit, Trash2, Upload, Loader2, Save, X } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import { ConfirmModal } from './ConfirmModal';
 
 interface Product {
     id: string;
@@ -48,6 +49,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     const [isUploading, setIsUploading] = useState(false);
     const [inlineEditId, setInlineEditId] = useState<string | null>(null);
     const [inlineEditData, setInlineEditData] = useState<Partial<Product>>({});
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, name: string } | null>(null);
     const navigate = useNavigate();
 
     const handleOpenModal = (product?: Product) => {
@@ -209,7 +211,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                                             <div className="flex gap-2 justify-end">
                                                 <button
                                                     onClick={handleInlineSave}
-                                                    className="px-4 py-2 text-green-600 hover:bg-green-50 rounded font-bold flex items-center gap-1"
+                                                    className="px-4 py-2 bg-green-100 text-green-700 hover:bg-green-200 rounded font-bold flex items-center gap-1 transition-colors"
                                                 >
                                                     <Save size={16} /> Salvar
                                                 </button>
@@ -249,9 +251,7 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                                                     <Edit size={18} />
                                                 </button>
                                                 <button
-                                                    onClick={() => {
-                                                        if (confirm(`Deletar "${product.name}"?`)) deleteProduct(product.id);
-                                                    }}
+                                                    onClick={() => setDeleteConfirmation({ id: product.id, name: product.name })}
                                                     className="p-2 text-red-600 hover:bg-red-50 rounded"
                                                     title="Deletar"
                                                 >
@@ -375,6 +375,21 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={!!deleteConfirmation}
+                title="Excluir Produto"
+                message={`Tem certeza que deseja excluir "${deleteConfirmation?.name}"?`}
+                onConfirm={() => {
+                    if (deleteConfirmation) {
+                        deleteProduct(deleteConfirmation.id);
+                        setDeleteConfirmation(null);
+                    }
+                }}
+                onCancel={() => setDeleteConfirmation(null)}
+                isDestructive
+                confirmText="Excluir"
+            />
         </div>
     );
 };

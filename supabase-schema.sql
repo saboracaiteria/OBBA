@@ -291,3 +291,7 @@ CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings
 -- =====================================================
 
 SELECT 'Schema criado com sucesso! ✅' AS status;
+
+-- Add display_order to categories
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
+

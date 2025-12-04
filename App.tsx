@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronDown, ChevronUp, Edit, FileText,
   Settings, BarChart2, List, Folder, LogOut, CheckCircle,
   Printer, Tag, ToggleLeft, Upload, Info, ArrowLeft, AlertCircle,
-  Lock as LockIcon, Palette
+  Lock as LockIcon, Palette, Package
 } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Preferences } from '@capacitor/preferences';
@@ -26,6 +26,8 @@ import { ReportsPage } from './ReportsPage';
 import { PrinterProvider } from './PrinterContext';
 import { PrinterSettingsPage } from './PrinterSettingsPage';
 import { ImageCropModal } from './ImageCropModal';
+import { InventoryPage } from './InventoryPage';
+import { ConfirmModal } from './ConfirmModal';
 import { supabase } from './supabaseClient';
 
 
@@ -82,7 +84,7 @@ const usePersistedState = <T,>(key: string, initialValue: T) => {
     saveState();
   }, [key, state, isLoaded]);
 
-  return [state, setState] as const;
+  return [state, setState, isLoaded] as const;
 };
 
 // --- Footer Component ---
@@ -113,7 +115,15 @@ const Footer = () => (
       {/* Developer Credit */}
       <div className="text-center pt-3 border-t border-gray-700">
         <p className="text-xs">
-          Desenvolvido por <span className="text-purple-400 font-semibold">@_nildoxz</span>
+          Desenvolvido por{' '}
+          <a
+            href="https://www.instagram.com/_nildoxz/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-purple-400 font-semibold hover:text-purple-300 transition-colors"
+          >
+            @_nildoxz
+          </a>
         </p>
       </div>
     </div>
@@ -161,6 +171,7 @@ interface AppContextType {
   setAdminRole: (role: Role) => void;
   addOrder: (order: OrderRecord) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
+  deleteOrder: (id: string) => void;
 
   checkStoreStatus: () => 'open' | 'closed';
   isSidebarOpen: boolean;
@@ -172,11 +183,13 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Dados locais (apenas carrinho e estado da UI)
-  const [cart, setCart] = usePersistedState<CartItem[]>('cart', []);
+  const [cart, setCart, cartLoaded] = usePersistedState<CartItem[]>('cart', []);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [adminRole, setAdminRole] = useState<Role>(null);
-  const [appliedCoupon, setAppliedCoupon] = usePersistedState<Coupon | null>('appliedCoupon', null);
+  const [adminRole, setAdminRole, roleLoaded] = usePersistedState<Role>('adminRole', null);
+  const [appliedCoupon, setAppliedCoupon, couponLoaded] = usePersistedState<Coupon | null>('appliedCoupon', null);
   const [loading, setLoading] = useState(true);
+
+  const isStorageLoaded = cartLoaded && roleLoaded && couponLoaded;
 
   // Dados do Supabase
   const [products, setProducts] = useState<Product[]>([]);
@@ -207,9 +220,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         setLoading(false);
       }
     };
-    init();
+    if (isStorageLoaded) {
+      init();
+    }
+  }, [isStorageLoaded]);
 
-    // Configurar subscriptions para atualizações em tempo real
+
+  // Configurar subscriptions para atualizações em tempo real
+  useEffect(() => {
     const channels = [
       supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => fetchProducts()).subscribe(),
       supabase.channel('public:categories').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => fetchCategories()).subscribe(),
@@ -265,7 +283,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const fetchCategories = async () => {
-    const { data } = await supabase.from('categories').select('*').order('title');
+    const { data } = await supabase.from('categories').select('*').order('display_order', { ascending: true });
     if (data) setCategories(data);
   };
 
@@ -290,7 +308,18 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const fetchCoupons = async () => {
     const { data } = await supabase.from('coupons').select('*');
-    if (data) setCoupons(data);
+    if (data) {
+      const mappedCoupons: Coupon[] = data.map(c => ({
+        id: c.id,
+        code: c.code,
+        type: c.type,
+        value: c.value,
+        active: c.active,
+        usageCount: c.usage_count,
+        minOrderValue: c.min_order_value
+      }));
+      setCoupons(mappedCoupons);
+    }
   };
 
   const fetchOrders = async () => {
@@ -488,13 +517,20 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addCoupon = async (c: Coupon) => {
-    await supabase.from('coupons').insert([{
+    const { data, error } = await supabase.from('coupons').insert([{
       code: c.code,
       type: c.type,
       value: c.value,
       active: c.active,
-      usage_count: c.usageCount
+      usage_count: c.usageCount,
+      min_order_value: c.minOrderValue
     }]);
+
+    if (error) {
+      console.error('Erro ao adicionar cupom:', error);
+      throw error;
+    }
+    // Realtime subscription will call fetchCoupons() automatically
   };
 
   const updateCoupon = async (c: Coupon) => {
@@ -503,12 +539,15 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       type: c.type,
       value: c.value,
       active: c.active,
-      usage_count: c.usageCount
+      usage_count: c.usageCount,
+      min_order_value: c.minOrderValue
     }).eq('id', c.id);
+    // Realtime subscription will call fetchCoupons() automatically
   };
 
   const deleteCoupon = async (id: string) => {
     await supabase.from('coupons').delete().eq('id', id);
+    // Realtime subscription will call fetchCoupons() automatically
   };
 
   const updateSettings = async (s: Partial<GlobalSettings>) => {
@@ -546,8 +585,15 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }]);
   };
 
-  const updateOrderStatus = async (id: string, s: OrderStatus) => {
-    await supabase.from('orders').update({ status: s }).eq('id', id);
+  const updateOrderStatus = async (id: string, status: OrderStatus) => {
+    // Optimistic update
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+    await supabase.from('orders').update({ status }).eq('id', id);
+  };
+
+  const deleteOrder = async (id: string) => {
+    setOrders(prev => prev.filter(o => o.id !== id));
+    await supabase.from('orders').delete().eq('id', id);
   };
 
   const applyCoupon = (code: string) => {
@@ -555,6 +601,13 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (!coupon) {
       return { success: false, message: 'Cupom inválido ou expirado' };
     }
+
+    // Check minimum order value
+    const subtotal = cart.reduce((acc, item) => acc + (item.totalPrice * item.quantity), 0);
+    if (coupon.minOrderValue && subtotal < coupon.minOrderValue) {
+      return { success: false, message: `Valor mínimo para este cupom: ${formatCurrency(coupon.minOrderValue)}` };
+    }
+
     setAppliedCoupon(coupon);
     return { success: true, message: 'Cupom aplicado com sucesso!' };
   };
@@ -604,7 +657,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       addCategory, updateCategory, deleteCategory,
       addGroup, updateGroup, deleteGroup,
       addCoupon, updateCoupon, deleteCoupon,
-      updateSettings, setAdminRole, addOrder, updateOrderStatus,
+      updateSettings, setAdminRole, addOrder,
+      updateOrderStatus,
+      deleteOrder,
       checkStoreStatus, setSidebarOpen,
       appliedCoupon, applyCoupon, removeCoupon,
       loading
@@ -713,12 +768,14 @@ const Header = () => {
       className="h-16 flex items-center justify-between px-4 shadow-md sticky top-0 z-40 transition-colors duration-300"
       style={{ backgroundColor: 'var(--color-header-bg, #4E0797)' }}
     >
-      <button onClick={() => setSidebarOpen(true)} className="text-white p-1">
-        <Menu size={28} style={{ color: 'var(--color-header-text, #ffffff)' }} />
-      </button>
-      <button className="text-white p-1">
-        <Search size={28} style={{ color: 'var(--color-header-text, #ffffff)' }} />
-      </button>
+      <div className="max-w-md mx-auto w-full flex items-center justify-between">
+        <button onClick={() => setSidebarOpen(true)} className="text-white p-1">
+          <Menu size={28} style={{ color: 'var(--color-header-text, #ffffff)' }} />
+        </button>
+        <button className="text-white p-1">
+          <Search size={28} style={{ color: 'var(--color-header-text, #ffffff)' }} />
+        </button>
+      </div>
     </div>
   );
 };
@@ -755,17 +812,17 @@ const ProductCard: React.FC<{ product: Product }> = ({ product }) => {
   return (
     <>
       <div
-        className={`flex-shrink-0 w-[185px] bg-white rounded-xl shadow-md border border-gray-200 mr-4 mb-2 overflow-hidden cursor-pointer pb-2 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] hover:bg-gray-50 active:scale-[0.98] active:shadow-sm ${checkStoreStatus() === 'closed' ? 'opacity-75 grayscale' : ''}`}
+        className={`flex-shrink-0 w-[170px] bg-white rounded-xl shadow-md border border-gray-200 mr-3 mb-2 overflow-hidden cursor-pointer pb-2 transition-all duration-300 ease-out hover:shadow-xl hover:scale-[1.02] hover:bg-gray-50 active:scale-[0.98] active:shadow-sm ${checkStoreStatus() === 'closed' ? 'opacity-75 grayscale' : ''}`}
         onClick={handleAdd}
       >
-        <div className="h-[150px] w-full overflow-hidden">
+        <div className="h-[130px] w-full overflow-hidden">
           <img src={product.image} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 ease-out hover:scale-105" />
         </div>
-        <div className="p-3 flex flex-col h-[140px]">
-          <h3 className="font-bold text-gray-800 text-sm leading-tight mb-2 line-clamp-2 h-10">{product.name}</h3>
-          <p className="text-[10px] text-gray-500 line-clamp-3 mb-auto">{product.description}</p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-            <span className="font-bold text-green-600 text-base">R$ {product.price.toFixed(2)}</span>
+        <div className="p-2.5 flex flex-col h-[125px]">
+          <h3 className="font-bold text-gray-800 text-[13px] leading-tight mb-1.5 line-clamp-2 h-9">{product.name}</h3>
+          <p className="text-[9px] text-gray-500 line-clamp-3 mb-auto">{product.description}</p>
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
+            <span className="font-bold text-green-600 text-sm">R$ {product.price.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -999,12 +1056,12 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* Spacer when banner exists to account for overlapping logo */}
-      {settings.bannerUrl && <div className="h-20 bg-white"></div>}
+      {/* Reduced spacer when banner exists */}
+      {settings.bannerUrl && <div className="h-16 bg-white"></div>}
 
       <div className="px-4 -mt-0">
         {/* Status Badge */}
-        <div className="flex flex-col items-center gap-2 -mt-0 mb-4 pt-4">
+        <div className="flex flex-col items-center gap-2 -mt-0 mb-3 pt-2">
           {status === 'closed' ? (
             <span className="bg-red-600 text-white px-6 py-2 rounded-md font-medium text-sm shadow-sm uppercase tracking-wide">
               🔴 Loja Fechada
@@ -1022,7 +1079,7 @@ const HomePage = () => {
         </div>
 
         {/* Info Rows */}
-        <div className="flex justify-between items-center bg-transparent mb-4 px-2">
+        <div className="flex justify-between items-center bg-transparent mb-3 px-2">
           <div className="flex flex-col items-center flex-1">
             <div className="flex items-center gap-1 text-gray-700 font-bold text-sm">
               <Clock size={16} /> Entrega
@@ -1038,23 +1095,23 @@ const HomePage = () => {
         </div>
 
         {/* Hours Link */}
-        <div className="flex justify-center items-center gap-1 text-gray-600 mb-6">
+        <div className="flex justify-center items-center gap-1 text-gray-600 mb-3">
           <Info size={16} />
           <span className="font-bold text-sm">Horários</span>
         </div>
 
         {/* Warning Alert */}
-        <div className="border border-red-200 bg-red-50 text-red-600 px-4 py-3 rounded-md mb-6 text-center text-sm font-medium">
+        <div className="border border-red-200 bg-red-50 text-red-600 px-4 py-3 rounded-md mb-4 text-center text-sm font-medium">
           Entregas somente até as 21:00hrs!
         </div>
 
         {/* Categories */}
-        <div className="space-y-6">
+        <div className="space-y-5">
           {categories.map(cat => {
             const catProducts = products.filter(p => p.categoryId === cat.id);
             return (
               <div key={cat.id} id={`cat-${cat.id}`}>
-                <h2 className="text-xl font-bold text-gray-700 mb-4 pl-1 flex items-center gap-2">
+                <h2 className="text-xl font-bold text-gray-700 mb-3 pl-1 flex items-center gap-2">
                   {cat.title} {cat.icon}
                 </h2>
                 {/* Horizontal scrolling container */}
@@ -1118,7 +1175,7 @@ const FloatingCartButton = () => {
 };
 
 const CartPage = () => {
-  const { cart, updateCartQuantity, removeFromCart, updateCartNote, settings, checkStoreStatus, appliedCoupon, applyCoupon, removeCoupon } = useApp();
+  const { cart, updateCartQuantity, removeFromCart, updateCartNote, settings, checkStoreStatus, appliedCoupon, applyCoupon, removeCoupon, groups } = useApp();
   const navigate = useNavigate();
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -1169,38 +1226,60 @@ const CartPage = () => {
       </div>
 
       <div className="p-4 space-y-3">
-        {cart.map(item => (
-          <div key={item.cartId} className="bg-white p-3 rounded shadow-sm border border-gray-200 flex justify-between">
-            <div className="flex flex-col justify-between items-start flex-1 pr-2">
-              <div>
-                <h3 className="font-bold text-gray-800 text-sm uppercase">{item.product.name}</h3>
-                <p className="text-gray-500 text-xs">R$ {item.totalPrice.toFixed(2)}</p>
-                {Object.keys(item.selectedOptions).length > 0 && <p className="text-[10px] text-gray-400 mt-1">Com adicionais</p>}
-                {item.note && <p className="text-[10px] text-blue-600 mt-1 italic">Obs: {item.note}</p>}
+        {cart.map(item => {
+          // Get option names for this item
+          const selectedOptionsText: string[] = [];
+          Object.entries(item.selectedOptions).forEach(([optionId, qty]) => {
+            if ((qty as number) > 0) {
+              for (const group of groups) {
+                const option = group.options.find(opt => opt.id === optionId);
+                if (option) {
+                  selectedOptionsText.push(`+ ${option.name} (${qty}x)`);
+                  break;
+                }
+              }
+            }
+          });
+
+          return (
+            <div key={item.cartId} className="bg-white p-3 rounded shadow-sm border border-gray-200 flex justify-between">
+              <div className="flex flex-col justify-between items-start flex-1 pr-2">
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm uppercase">{item.product.name}</h3>
+                  <p className="text-gray-500 text-xs">R$ {item.totalPrice.toFixed(2)}</p>
+                  {selectedOptionsText.length > 0 && (
+                    <div className="mt-1">
+                      {selectedOptionsText.map((opt, idx) => (
+                        <p key={idx} className="text-[10px] text-gray-600">{opt}</p>
+                      ))}
+                    </div>
+                  )}
+                  {item.note && <p className="text-[10px] text-blue-600 mt-1 italic">Obs: {item.note}</p>}
+                </div>
+
+                <div className="mt-2">
+                  <p className="font-bold text-sm mb-2">Subtotal: R$ {(item.totalPrice * item.quantity).toFixed(2)}</p>
+                  <button
+                    onClick={() => handleEditNote(item.cartId, item.note)}
+                    className="bg-red-600 text-white text-[10px] font-bold px-4 py-1 rounded flex items-center gap-1 hover:bg-red-700"
+                  >
+                    <Edit size={10} /> OBSERVAÇÃO
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-2">
-                <p className="font-bold text-sm mb-2">Subtotal: R$ {(item.totalPrice * item.quantity).toFixed(2)}</p>
-                <button
-                  onClick={() => handleEditNote(item.cartId, item.note)}
-                  className="bg-red-600 text-white text-[10px] font-bold px-4 py-1 rounded flex items-center gap-1 hover:bg-red-700"
-                >
-                  <Edit size={10} /> OBSERVAÇÃO
+              <div className="flex flex-col items-end gap-2">
+                <button onClick={() => updateCartQuantity(item.cartId, item.quantity + 1)} className="w-8 h-8 bg-red-600 text-white rounded flex items-center justify-center shadow-sm">
+                  <Plus size={16} />
+                </button>
+                <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
+                <button onClick={() => removeFromCart(item.cartId)} className="w-8 h-8 bg-red-600 text-white rounded flex items-center justify-center shadow-sm">
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>
-
-            <div className="flex flex-col items-end gap-2">
-              <button onClick={() => updateCartQuantity(item.cartId, item.quantity + 1)} className="w-8 h-8 bg-red-600 text-white rounded flex items-center justify-center shadow-sm">
-                <Plus size={16} />
-              </button>
-              <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
-              <button onClick={() => removeFromCart(item.cartId)} className="w-8 h-8 bg-red-600 text-white rounded flex items-center justify-center shadow-sm">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Note Edit Modal */}
@@ -1232,7 +1311,8 @@ const CartPage = () => {
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Cart Footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#f6f6f6] border-t border-gray-200 p-4">
@@ -1268,6 +1348,10 @@ const CartPage = () => {
                 <span>- {formatCurrency(discount)}</span>
               </div>
             )}
+            <div className="flex justify-between text-gray-600">
+              <span>Taxa de Entrega</span>
+              <span>{formatCurrency(settings.deliveryFee)}</span>
+            </div>
           </div>
 
           <div className="flex justify-center mb-2">
@@ -1290,7 +1374,7 @@ const CartPage = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 
@@ -1436,6 +1520,7 @@ const AdminPanel = () => {
     { title: 'Adicionais', icon: <ToggleLeft size={32} />, path: '/panel/addons', role: ['admin'] },
     { title: 'Cupons', icon: <Tag size={32} />, path: '/panel/coupons', role: ['admin'] },
     { title: 'Cores do Site', icon: <Palette size={32} />, path: '/panel/theme', role: ['admin'] },
+    { title: 'Estoque', icon: <Package size={32} />, path: '/panel/inventory', role: ['admin'] },
     { title: 'Impressora', icon: <Printer size={32} />, path: '/panel/printer', role: ['admin', 'employee'] },
   ];
 
@@ -1522,6 +1607,10 @@ const OrdersPage = () => {
     await printText(receipt);
   };
 
+  const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string } | null>(null);
+  const { deleteOrder, adminRole } = useApp();
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="flex items-center gap-3 mb-6">
@@ -1546,13 +1635,112 @@ const OrdersPage = () => {
             <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
               <span className="font-bold">{formatCurrency(order.total)}</span>
               <div className="flex gap-2">
+                <button onClick={() => setSelectedOrder(order)} className="p-2 bg-blue-50 text-blue-600 rounded text-xs font-bold">Ver Detalhes</button>
                 <button onClick={() => updateOrderStatus(order.id, 'completed')} className="p-2 bg-green-50 text-green-600 rounded"><CheckCircle size={18} /></button>
                 <button onClick={() => handlePrintOrder(order)} className="p-2 bg-gray-50 text-gray-600 rounded hover:bg-gray-200"><Printer size={18} /></button>
+                {adminRole === 'admin' && (
+                  <button
+                    onClick={() => setDeleteConfirmation({ id: order.id })}
+                    className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                    title="Excluir Pedido"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg">Detalhes do Pedido #{selectedOrder.id}</h3>
+              <button onClick={() => setSelectedOrder(null)}><X size={24} /></button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-gray-50 p-3 rounded">
+                <p><strong>Cliente:</strong> {selectedOrder.customerName}</p>
+                <p><strong>WhatsApp:</strong> {selectedOrder.whatsapp}</p>
+                <p><strong>Endereço:</strong> {selectedOrder.address || 'Retirada'}</p>
+                <p><strong>Pagamento:</strong> {selectedOrder.paymentMethod}</p>
+                <p><strong>Data:</strong> {new Date(selectedOrder.date).toLocaleString()}</p>
+              </div>
+
+              <div>
+                <h4 className="font-bold mb-2">Itens</h4>
+                <div className="space-y-2">
+                  {selectedOrder.fullDetails.map((item, idx) => {
+                    // Get option names for this item
+                    const selectedOptionsText: string[] = [];
+                    Object.entries(item.selectedOptions).forEach(([optionId, qty]) => {
+                      if ((qty as number) > 0) {
+                        for (const group of groups) {
+                          const option = group.options.find(opt => opt.id === optionId);
+                          if (option) {
+                            selectedOptionsText.push(`+ ${option.name} (${qty}x)`);
+                            break;
+                          }
+                        }
+                      }
+                    });
+
+                    return (
+                      <div key={idx} className="border-b pb-2">
+                        <div className="flex justify-between">
+                          <span>{item.quantity}x {item.product.name}</span>
+                          <span>{formatCurrency(item.totalPrice)}</span>
+                        </div>
+                        {selectedOptionsText.length > 0 && (
+                          <div className="ml-4 mt-1">
+                            {selectedOptionsText.map((opt, optIdx) => (
+                              <p key={optIdx} className="text-xs text-gray-600">{opt}</p>
+                            ))}
+                          </div>
+                        )}
+                        {item.note && <p className="text-xs text-blue-600 ml-4 mt-1 italic">Obs: {item.note}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t font-bold text-lg">
+                <span>Total</span>
+                <span>{formatCurrency(selectedOrder.total)}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <button onClick={() => handlePrintOrder(selectedOrder)} className="flex-1 bg-gray-200 py-3 rounded font-bold flex items-center justify-center gap-2">
+                <Printer size={20} /> Imprimir
+              </button>
+              <button onClick={() => setSelectedOrder(null)} className="flex-1 bg-purple-600 text-white py-3 rounded font-bold">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!deleteConfirmation}
+        title="Excluir Pedido"
+        message="Tem certeza que deseja excluir este pedido permanentemente? Esta ação não pode ser desfeita."
+        onConfirm={() => {
+          if (deleteConfirmation) {
+            deleteOrder(deleteConfirmation.id);
+            setDeleteConfirmation(null);
+          }
+        }}
+        onCancel={() => setDeleteConfirmation(null)}
+        isDestructive
+        confirmText="Excluir"
+        cancelText="Cancelar"
+      />
     </div>
   );
 };
@@ -1561,6 +1749,7 @@ const CouponsPage = () => {
   const { coupons, addCoupon, updateCoupon, deleteCoupon } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Partial<Coupon>>({});
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; code: string } | null>(null);
   const navigate = useNavigate();
 
   const handleSave = async () => {
@@ -1578,9 +1767,19 @@ const CouponsPage = () => {
         await addCoupon({ ...newCoupon, active: true, usageCount: 0 } as Coupon);
       }
       setIsModalOpen(false);
+      // Force reload to show new coupon
+      window.location.reload();
     } catch (error) {
       console.error('Erro ao salvar cupom:', error);
       alert('Erro ao salvar cupom. Verifique se o código já existe.');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleteConfirmation) {
+      await deleteCoupon(deleteConfirmation.id);
+      setDeleteConfirmation(null);
+      window.location.reload();
     }
   };
 
@@ -1600,13 +1799,14 @@ const CouponsPage = () => {
             <div>
               <p className="font-bold text-lg">{c.code}</p>
               <p className="text-sm text-gray-500">{c.type === 'percent' ? `${c.value}% OFF` : `R$ ${c.value} OFF`}</p>
+              {c.minOrderValue && <p className="text-xs text-gray-400">Pedido mín: R$ {c.minOrderValue.toFixed(2)}</p>}
             </div>
             <div className="flex items-center gap-3">
               <button onClick={() => updateCoupon({ ...c, active: !c.active })} className={`transition-colors ${c.active ? 'text-green-500' : 'text-gray-300'}`}>
                 <ToggleLeft size={28} className={`transition-transform ${c.active ? 'rotate-180' : ''}`} />
               </button>
               <button onClick={() => { setEditingCoupon(c); setIsModalOpen(true); }} className="text-gray-400"><Edit size={18} /></button>
-              <button onClick={() => deleteCoupon(c.id)} className="text-red-400"><Trash2 size={18} /></button>
+              <button onClick={() => setDeleteConfirmation({ id: c.id, code: c.code })} className="text-red-400"><Trash2 size={18} /></button>
             </div>
           </div>
         ))}
@@ -1628,11 +1828,29 @@ const CouponsPage = () => {
               type="number" className="w-full border p-2 rounded" placeholder="Valor"
               value={editingCoupon.value || ''} onChange={e => setEditingCoupon({ ...editingCoupon, value: parseFloat(e.target.value) })}
             />
+            <input
+              type="number"
+              className="w-full border p-2 rounded"
+              placeholder="Valor Mínimo do Pedido (opcional)"
+              value={editingCoupon.minOrderValue || ''}
+              onChange={e => setEditingCoupon({ ...editingCoupon, minOrderValue: e.target.value ? parseFloat(e.target.value) : undefined })}
+            />
             <button onClick={handleSave} className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold">Salvar</button>
             <button onClick={() => setIsModalOpen(false)} className="w-full text-gray-500 py-2">Cancelar</button>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!deleteConfirmation}
+        title="Excluir Cupom"
+        message={`Tem certeza que deseja excluir o cupom "${deleteConfirmation?.code}"?`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirmation(null)}
+        isDestructive
+        confirmText="Excluir"
+        cancelText="Cancelar"
+      />
     </div>
   );
 };
@@ -1798,7 +2016,7 @@ const AddonsPage = () => {
                   <div className="flex gap-2 justify-end">
                     <button
                       onClick={handleInlineSave}
-                      className="px-4 py-2 text-green-600 hover:bg-green-50 rounded font-bold flex items-center gap-1"
+                      className="px-4 py-2 bg-green-100 text-green-700 hover:bg-green-200 rounded font-bold flex items-center gap-1 transition-colors"
                     >
                       <CheckCircle size={16} /> Salvar
                     </button>
@@ -2621,6 +2839,8 @@ const AppContent = () => {
         <Route path="/panel/coupons" element={<CouponsPage />} />
         <Route path="/panel/addons" element={<AddonsPage />} />
         <Route path="/panel/settings" element={<SettingsPage />} />
+        <Route path="/panel/theme" element={<ThemeSettingsPage />} />
+        <Route path="/panel/inventory" element={<InventoryPage products={products} />} />
         <Route path="/panel/printer" element={<PrinterSettingsPage />} />
         <Route path="/panel/theme" element={<ThemeSettingsPage />} />
 
@@ -2646,6 +2866,10 @@ const AppContent = () => {
 
         <Route path="/panel/reports" element={
           <ReportsPage orders={orders} />
+        } />
+
+        <Route path="/panel/inventory" element={
+          <InventoryPage products={products} />
         } />
       </Routes>
 
