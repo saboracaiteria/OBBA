@@ -126,6 +126,8 @@ export interface GlobalSettings {
   openingHours: OpeningHour[];
   deliveryOnly: boolean; // true = only pickup, false = delivery available
   themeColors?: ThemeColors; // Configurações de cores do tema
+  closedMessage?: string; // Mensagem quando a loja está fechada
+  openMessage?: string; // Mensagem quando a loja está aberta
 }
 
 export type Role = 'admin' | 'employee' | null;

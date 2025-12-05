@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronDown, ChevronUp, Edit, FileText,
   Settings, BarChart2, List, Folder, LogOut, CheckCircle,
   Printer, Tag, ToggleLeft, Upload, Info, ArrowLeft, AlertCircle,
-  Lock as LockIcon, Palette, Package
+  Lock as LockIcon, Palette, Package, MessageSquare
 } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Preferences } from '@capacitor/preferences';
@@ -172,6 +172,7 @@ interface AppContextType {
   addOrder: (order: OrderRecord) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
   deleteOrder: (id: string) => void;
+  copyOrderToClipboard: (order: OrderRecord) => void;
 
   checkStoreStatus: () => 'open' | 'closed';
   isSidebarOpen: boolean;
@@ -228,20 +229,45 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Configurar subscriptions para atualizações em tempo real
   useEffect(() => {
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    let previousOrderCount = orders.length;
+
+    const handleNewOrder = async () => {
+      await fetchOrders();
+
+      // Check if a new order was added (count increased)
+      if (orders.length > previousOrderCount && 'Notification' in window && Notification.permission === 'granted') {
+        // Only show notification if page is not visible
+        if (document.hidden) {
+          new Notification('Novo Pedido! 🔔', {
+            body: 'Um novo pedido foi recebido. Clique para visualizar.',
+            icon: settings.logoUrl || '/logo.png',
+            tag: 'new-order',
+            requireInteraction: true
+          });
+        }
+      }
+      previousOrderCount = orders.length;
+    };
+
     const channels = [
       supabase.channel('public:products').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => fetchProducts()).subscribe(),
       supabase.channel('public:categories').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => fetchCategories()).subscribe(),
       supabase.channel('public:groups').on('postgres_changes', { event: '*', schema: 'public', table: 'product_groups' }, () => fetchGroups()).subscribe(),
       supabase.channel('public:options').on('postgres_changes', { event: '*', schema: 'public', table: 'product_options' }, () => fetchGroups()).subscribe(), // Recarrega grupos se opções mudarem
       supabase.channel('public:coupons').on('postgres_changes', { event: '*', schema: 'public', table: 'coupons' }, () => fetchCoupons()).subscribe(),
-      supabase.channel('public:orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders()).subscribe(),
+      supabase.channel('public:orders').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, handleNewOrder).subscribe(),
       supabase.channel('public:settings').on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, () => fetchSettings()).subscribe(),
     ];
 
     return () => {
       channels.forEach(channel => supabase.removeChannel(channel));
     };
-  }, []);
+  }, [orders.length]);
 
   // --- Funções de Fetch ---
 
@@ -356,7 +382,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         deliveryFee: data.delivery_fee,
         deliveryOnly: data.delivery_only,
         openingHours: data.opening_hours,
-        themeColors: data.theme_colors
+        themeColors: data.theme_colors,
+        closedMessage: data.closed_message || '🔴 Loja Fechada',
+        openMessage: data.open_message || '🟢 Aberto até às 23:00'
       });
     }
   };
@@ -566,6 +594,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (s.deliveryOnly !== undefined) dbSettings.delivery_only = s.deliveryOnly;
     if (s.openingHours !== undefined) dbSettings.opening_hours = s.openingHours;
     if (s.themeColors !== undefined) dbSettings.theme_colors = s.themeColors;
+    if (s.closedMessage !== undefined) dbSettings.closed_message = s.closedMessage;
+    if (s.openMessage !== undefined) dbSettings.open_message = s.openMessage;
 
     await supabase.from('settings').update(dbSettings).eq('id', 1);
   };
@@ -592,8 +622,60 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const deleteOrder = async (id: string) => {
+    console.log('Deletando pedido:', id);
+
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+
+    if (error) {
+      console.error('Erro ao deletar pedido:', error);
+      alert(`Erro ao deletar pedido: ${error.message}`);
+      return;
+    }
+
+    // Only update local state if delete was successful
     setOrders(prev => prev.filter(o => o.id !== id));
-    await supabase.from('orders').delete().eq('id', id);
+    console.log('Pedido deletado com sucesso');
+  };
+
+  const copyOrderToClipboard = (order: OrderRecord) => {
+    // Format order details similar to WhatsApp message
+    const itemsText = order.fullDetails.map(i => {
+      let txt = `${i.quantity}x ${i.product.name}`;
+
+      // Get option names from groups
+      const selectedOptionsText: string[] = [];
+      Object.entries(i.selectedOptions).forEach(([optionId, qty]) => {
+        if ((qty as number) > 0) {
+          for (const group of groups) {
+            const option = group.options.find(opt => opt.id === optionId);
+            if (option) {
+              selectedOptionsText.push(`${option.name} ${qty}x`);
+              break;
+            }
+          }
+        }
+      });
+
+      if (selectedOptionsText.length > 0) {
+        txt += `\n   (${selectedOptionsText.join(', ')})`;
+      }
+
+      if (i.note) txt += `\n   Obs: ${i.note}`;
+      return txt;
+    }).join('\n');
+
+    const text = `*Pedido #${order.id}*\n` +
+      `Cliente: ${order.customerName}\n` +
+      `Tel: ${order.whatsapp}\n` +
+      `Tipo: ${order.method}\n` +
+      `Endereço: ${order.address}\n` +
+      `Pagamento: ${order.paymentMethod}\n\n` +
+      `Itens:\n${itemsText}\n\n` +
+      `*Total: ${formatCurrency(order.total)}*`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      alert('Pedido copiado para área de transferência!');
+    });
   };
 
   const applyCoupon = (code: string) => {
@@ -660,6 +742,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       updateSettings, setAdminRole, addOrder,
       updateOrderStatus,
       deleteOrder,
+      copyOrderToClipboard,
       checkStoreStatus, setSidebarOpen,
       appliedCoupon, applyCoupon, removeCoupon,
       loading
@@ -768,7 +851,7 @@ const Header = () => {
       className="h-16 flex items-center justify-between px-4 shadow-md sticky top-0 z-40 transition-colors duration-300"
       style={{ backgroundColor: 'var(--color-header-bg, #4E0797)' }}
     >
-      <div className="max-w-md mx-auto w-full flex items-center justify-between">
+      <div className="max-w-sm mx-auto w-full flex items-center justify-between">
         <button onClick={() => setSidebarOpen(true)} className="text-white p-1">
           <Menu size={28} style={{ color: 'var(--color-header-text, #ffffff)' }} />
         </button>
@@ -1064,11 +1147,11 @@ const HomePage = () => {
         <div className="flex flex-col items-center gap-2 -mt-0 mb-3 pt-2">
           {status === 'closed' ? (
             <span className="bg-red-600 text-white px-6 py-2 rounded-md font-medium text-sm shadow-sm uppercase tracking-wide">
-              🔴 Loja Fechada
+              {settings.closedMessage || '🔴 Loja Fechada'}
             </span>
           ) : (
             <span className="bg-[#4caf50] text-white px-6 py-2 rounded-md font-medium text-sm shadow-sm uppercase tracking-wide">
-              🟢 Aberto até às 23:00
+              {settings.openMessage || '🟢 Aberto até às 23:00'}
             </span>
           )}
           {settings.deliveryOnly && status === 'open' && (
@@ -1609,7 +1692,7 @@ const OrdersPage = () => {
 
   const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string } | null>(null);
-  const { deleteOrder, adminRole } = useApp();
+  const { deleteOrder, adminRole, copyOrderToClipboard } = useApp();
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
@@ -1636,6 +1719,7 @@ const OrdersPage = () => {
               <span className="font-bold">{formatCurrency(order.total)}</span>
               <div className="flex gap-2">
                 <button onClick={() => setSelectedOrder(order)} className="p-2 bg-blue-50 text-blue-600 rounded text-xs font-bold">Ver Detalhes</button>
+                <button onClick={() => copyOrderToClipboard(order)} className="p-2 bg-gray-50 text-gray-600 rounded hover:bg-gray-200" title="Copiar Pedido"><FileText size={18} /></button>
                 <button onClick={() => updateOrderStatus(order.id, 'completed')} className="p-2 bg-green-50 text-green-600 rounded"><CheckCircle size={18} /></button>
                 <button onClick={() => handlePrintOrder(order)} className="p-2 bg-gray-50 text-gray-600 rounded hover:bg-gray-200"><Printer size={18} /></button>
                 {adminRole === 'admin' && (
@@ -2371,6 +2455,50 @@ const SettingsPage = () => {
                 </strong>
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* Status Messages Configuration */}
+        <div className="bg-white p-4 rounded-lg shadow-sm">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <MessageSquare size={20} /> Mensagens de Status
+          </h3>
+          <p className="text-xs text-gray-500 mb-4">Personalize as mensagens exibidas quando a loja está aberta ou fechada</p>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Mensagem quando ABERTO
+              </label>
+              <input
+                type="text"
+                value={settings.openMessage || ''}
+                onChange={(e) => updateSettings({ openMessage: e.target.value })}
+                placeholder="Ex: 🟢 Aberto até às 23:00"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+              />
+              <p className="text-xs text-gray-400 mt-1">Exibido no topo da página inicial quando a loja está aberta</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Mensagem quando FECHADO
+              </label>
+              <input
+                type="text"
+                value={settings.closedMessage || ''}
+                onChange={(e) => updateSettings({ closedMessage: e.target.value })}
+                placeholder="Ex: 🔴 Loja Fechada"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+              />
+              <p className="text-xs text-gray-400 mt-1">Exibido no topo da página inicial quando a loja está fechada</p>
+            </div>
+
+            <button
+              onClick={handleSave}
+              className="w-full bg-purple-600 text-white py-2 rounded-lg font-bold hover:bg-purple-700 transition-colors"
+            >
+              Salvar Mensagens
+            </button>
           </div>
         </div>
 
