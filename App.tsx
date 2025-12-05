@@ -801,7 +801,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
 
   const handleAdminAccess = () => {
-    if (password === '123') {
+    if (password === '1245') {
       setAdminRole('admin');
       navigate('/panel');
       setShowPassword(false);
