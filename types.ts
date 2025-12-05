@@ -4,6 +4,7 @@ export interface ProductOption {
   name: string;
   price?: number;
   description?: string;
+  active?: boolean; // Toggle for emergency deactivation
 }
 
 export interface ProductGroup {
@@ -12,6 +13,7 @@ export interface ProductGroup {
   min: number;
   max: number;
   options: ProductOption[];
+  active?: boolean; // Toggle for emergency deactivation
 }
 
 export interface Product {
@@ -23,6 +25,7 @@ export interface Product {
   categoryId: string;
   groupIds?: string[]; // IDs of ProductGroups attached to this product
   displayOrder?: number; // Order for sorting products within category
+  active?: boolean; // Toggle for emergency deactivation
 }
 
 export interface Category {
@@ -30,6 +33,7 @@ export interface Category {
   title: string;
   icon?: string;
   displayOrder?: number;
+  active?: boolean; // Toggle for emergency deactivation
 }
 
 export interface CartItem {

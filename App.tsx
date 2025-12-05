@@ -6,7 +6,7 @@ import {
   MapPin, Phone, CreditCard, Banknote, Clock, Search,
   ChevronLeft, ChevronDown, ChevronUp, Edit, FileText,
   Settings, BarChart2, List, Folder, LogOut, CheckCircle,
-  Printer, Tag, ToggleLeft, Upload, Info, ArrowLeft, AlertCircle,
+  Printer, Tag, ToggleLeft, ToggleRight, Upload, Info, ArrowLeft, AlertCircle,
   Lock as LockIcon, Palette, Package, MessageSquare
 } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -304,7 +304,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         image: p.image,
         categoryId: p.category_id,
         groupIds: p.product_group_relations?.map((r: any) => r.group_id) || [],
-        displayOrder: p.display_order ?? 0
+        displayOrder: p.display_order ?? 0,
+        active: p.active ?? true
       }));
       setProducts(mappedProducts);
     }
@@ -312,7 +313,16 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const fetchCategories = async () => {
     const { data } = await supabase.from('categories').select('*').order('display_order', { ascending: true });
-    if (data) setCategories(data);
+    if (data) {
+      const mappedCategories: Category[] = data.map(c => ({
+        id: c.id,
+        title: c.title,
+        icon: c.icon,
+        displayOrder: c.display_order ?? 0,
+        active: c.active ?? true
+      }));
+      setCategories(mappedCategories);
+    }
   };
 
   const fetchGroups = async () => {
@@ -328,7 +338,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         title: g.title,
         min: g.min,
         max: g.max,
-        options: g.options || []
+        options: (g.options || []).map((o: any) => ({
+          id: o.id,
+          name: o.name,
+          price: o.price,
+          description: o.description,
+          active: o.active ?? true
+        })),
+        active: g.active ?? true
       }));
       setGroups(mappedGroups);
     }
@@ -1019,7 +1036,14 @@ const ProductModal = ({ product, onClose }: { product: Product; onClose: () => v
 
   const productGroups = useMemo(() => {
     if (!product.groupIds) return [];
-    return product.groupIds.map(gid => groups.find(g => g.id === gid)).filter(Boolean) as ProductGroup[];
+    return product.groupIds
+      .map(gid => groups.find(g => g.id === gid))
+      .filter(Boolean)
+      .filter(g => g!.active !== false)
+      .map(g => ({
+        ...g!,
+        options: g!.options.filter(o => o.active !== false)
+      })) as ProductGroup[];
   }, [product, groups]);
 
   const calculateTotal = () => {
@@ -1276,8 +1300,8 @@ const HomePage = () => {
 
         {/* Categories */}
         <div className="space-y-5">
-          {categories.map(cat => {
-            const catProducts = products.filter(p => p.categoryId === cat.id);
+          {categories.filter(cat => cat.active !== false).map(cat => {
+            const catProducts = products.filter(p => p.categoryId === cat.id && p.active !== false);
             return (
               <div key={cat.id} id={`cat-${cat.id}`}>
                 <h2 className="text-xl font-bold text-gray-700 mb-3 pl-1 flex items-center gap-2">
@@ -2135,6 +2159,23 @@ const AddonsPage = () => {
     setInlineEditData({});
   };
 
+  const handleToggleGroupActive = async (group: ProductGroup) => {
+    const newActive = !(group.active ?? true);
+    updateGroup({ ...group, active: newActive });
+    await supabase.from('product_groups').update({ active: newActive }).eq('id', group.id);
+  };
+
+  const handleToggleOptionActive = async (groupId: string, option: ProductOption) => {
+    const newActive = !(option.active ?? true);
+    await supabase.from('product_options').update({ active: newActive }).eq('id', option.id);
+    // Refresh via updateGroup
+    const group = groups.find(g => g.id === groupId);
+    if (group) {
+      const updatedOptions = group.options.map(o => o.id === option.id ? { ...o, active: newActive } : o);
+      updateGroup({ ...group, options: updatedOptions });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="flex items-center justify-between mb-6">
@@ -2196,14 +2237,22 @@ const AddonsPage = () => {
                 </div>
               </div>
             ) : (
-              <div className="p-4 flex justify-between items-center border-b border-gray-100">
+              <div className={`p-4 flex justify-between items-center border-b border-gray-100 ${(group.active ?? true) ? '' : 'opacity-50'}`}>
                 <div className="flex-1">
                   <h3 className="font-bold text-gray-800">{group.title}</h3>
                   <p className="text-sm text-gray-500">
                     Min: {group.min} | Max: {group.max} | {group.options.length} opções
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {/* Toggle Active/Inactive */}
+                  <button
+                    onClick={() => handleToggleGroupActive(group)}
+                    className={`p-2 rounded transition-colors ${(group.active ?? true) ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                    title={(group.active ?? true) ? 'Desativar Grupo' : 'Ativar Grupo'}
+                  >
+                    {(group.active ?? true) ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                  </button>
                   <button
                     onClick={() => handleInlineEdit(group)}
                     className="p-2 text-green-600 hover:bg-green-50 rounded transition-colors"
@@ -2249,7 +2298,7 @@ const AddonsPage = () => {
                 </div>
                 <div className="space-y-2">
                   {group.options.map(option => (
-                    <div key={option.id} className="bg-white p-3 rounded border border-gray-200 flex justify-between items-start">
+                    <div key={option.id} className={`bg-white p-3 rounded border border-gray-200 flex justify-between items-start ${(option.active ?? true) ? '' : 'opacity-50'}`}>
                       <div className="flex-1">
                         <p className="font-medium text-gray-800">{option.name}</p>
                         {option.description && (
@@ -2259,7 +2308,15 @@ const AddonsPage = () => {
                           + R$ {option.price?.toFixed(2) || '0.00'}
                         </p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1">
+                        {/* Toggle Active/Inactive */}
+                        <button
+                          onClick={() => handleToggleOptionActive(group.id, option)}
+                          className={`p-1 rounded transition-colors ${(option.active ?? true) ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                          title={(option.active ?? true) ? 'Desativar Opção' : 'Ativar Opção'}
+                        >
+                          {(option.active ?? true) ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
+                        </button>
                         <button
                           onClick={() => handleEditOption(group.id, option)}
                           className="p-1 text-blue-600 hover:bg-blue-50 rounded"

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, Edit, Trash2, Upload, Loader2, Save, X, GripVertical } from 'lucide-react';
+import { ChevronLeft, Plus, Edit, Trash2, Upload, Loader2, Save, X, GripVertical, ToggleLeft, ToggleRight } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -13,6 +13,7 @@ interface Product {
     categoryId: string;
     groupIds?: string[];
     displayOrder?: number;
+    active?: boolean;
 }
 
 interface Category {
@@ -154,6 +155,14 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         setInlineEditData({});
     };
 
+    const handleToggleActive = async (product: Product) => {
+        const newActive = !(product.active ?? true);
+        // Optimistic update via updateProduct
+        updateProduct({ ...product, active: newActive });
+        // Persist to Supabase
+        await supabase.from('products').update({ active: newActive }).eq('id', product.id);
+    };
+
     // --- Drag and Drop Handlers ---
     const handleDragStart = (e: React.DragEvent, product: Product) => {
         setDraggedProduct(product);
@@ -253,8 +262,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                                 <div
                                     key={product.id}
                                     className={`bg-white p-3 rounded-lg shadow-sm transition-all duration-200 ${dragOverProduct === product.id
-                                            ? 'border-2 border-purple-500 border-dashed bg-purple-50'
-                                            : 'border-2 border-transparent'
+                                        ? 'border-2 border-purple-500 border-dashed bg-purple-50'
+                                        : 'border-2 border-transparent'
                                         } ${draggedProduct?.id === product.id ? 'opacity-50' : ''}`}
                                     draggable={inlineEditId !== product.id}
                                     onDragStart={(e) => handleDragStart(e, product)}
@@ -322,14 +331,22 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                                             <img
                                                 src={product.image}
                                                 alt={product.name}
-                                                className="w-16 h-16 rounded object-cover"
+                                                className={`w-16 h-16 rounded object-cover ${(product.active ?? true) ? '' : 'opacity-40 grayscale'}`}
                                             />
-                                            <div className="flex-1">
+                                            <div className={`flex-1 ${(product.active ?? true) ? '' : 'opacity-50'}`}>
                                                 <p className="font-bold">{product.name}</p>
                                                 <p className="text-sm text-gray-500">{product.description}</p>
                                                 <p className="text-green-600 font-bold">R$ {product.price.toFixed(2)}</p>
                                             </div>
-                                            <div className="flex flex-col gap-2">
+                                            <div className="flex flex-col gap-1">
+                                                {/* Toggle Active/Inactive */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleToggleActive(product); }}
+                                                    className={`p-2 rounded transition-colors ${(product.active ?? true) ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                                                    title={(product.active ?? true) ? 'Desativar Produto' : 'Ativar Produto'}
+                                                >
+                                                    {(product.active ?? true) ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                                                </button>
                                                 <button
                                                     onClick={() => handleInlineEdit(product)}
                                                     className="p-2 text-green-600 hover:bg-green-50 rounded"

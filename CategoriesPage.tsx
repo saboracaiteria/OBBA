@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronLeft, Plus, Edit, Trash2, Save, ArrowUp, ArrowDown, ToggleLeft, ToggleRight } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { supabase } from './supabaseClient';
 
@@ -9,6 +9,7 @@ interface Category {
     title: string;
     icon?: string;
     displayOrder?: number;
+    active?: boolean;
 }
 
 interface CategoriesPageProps {
@@ -60,6 +61,12 @@ export const CategoriesPage: React.FC<CategoriesPageProps> = ({
     const handleInlineCancel = () => {
         setInlineEditId(null);
         setInlineEditData({});
+    };
+
+    const handleToggleActive = async (cat: Category) => {
+        const newActive = !(cat.active ?? true);
+        updateCategory({ ...cat, active: newActive });
+        await supabase.from('categories').update({ active: newActive }).eq('id', cat.id);
     };
 
     const handleMove = async (index: number, direction: 'up' | 'down') => {
@@ -242,13 +249,21 @@ export const CategoriesPage: React.FC<CategoriesPageProps> = ({
                                             <ArrowDown size={12} />
                                         </div>
                                     </div>
-                                    <span className="text-2xl">{cat.icon || '📦'}</span>
-                                    <div>
+                                    <span className={`text-2xl ${(cat.active ?? true) ? '' : 'opacity-40 grayscale'}`}>{cat.icon || '📦'}</span>
+                                    <div className={(cat.active ?? true) ? '' : 'opacity-50'}>
                                         <p className="font-bold text-lg">{cat.title}</p>
                                         <p className="text-xs text-gray-500">ID: {cat.id}</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-1">
+                                    {/* Toggle Active/Inactive */}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleToggleActive(cat); }}
+                                        className={`p-2 rounded transition-colors ${(cat.active ?? true) ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-100'}`}
+                                        title={(cat.active ?? true) ? 'Desativar Categoria' : 'Ativar Categoria'}
+                                    >
+                                        {(cat.active ?? true) ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                                    </button>
                                     <button
                                         onClick={() => handleInlineEdit(cat)}
                                         className="p-2 text-green-600 hover:bg-green-50 rounded"
