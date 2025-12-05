@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, Edit, Trash2, Upload, Loader2, Save, X } from 'lucide-react';
+import { ChevronLeft, Plus, Edit, Trash2, Upload, Loader2, Save, X, GripVertical } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { ConfirmModal } from './ConfirmModal';
 
@@ -12,6 +12,7 @@ interface Product {
     image: string;
     categoryId: string;
     groupIds?: string[];
+    displayOrder?: number;
 }
 
 interface Category {
@@ -33,6 +34,7 @@ interface ProductsPageProps {
     addProduct: (product: Product) => void;
     updateProduct: (product: Product) => void;
     deleteProduct: (id: string) => void;
+    reorderProducts: (categoryId: string, products: Product[]) => void;
 }
 
 export const ProductsPage: React.FC<ProductsPageProps> = ({
@@ -41,7 +43,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     groups,
     addProduct,
     updateProduct,
-    deleteProduct
+    deleteProduct,
+    reorderProducts
 }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Partial<Product>>({});
@@ -50,6 +53,8 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
     const [inlineEditId, setInlineEditId] = useState<string | null>(null);
     const [inlineEditData, setInlineEditData] = useState<Partial<Product>>({});
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, name: string } | null>(null);
+    const [draggedProduct, setDraggedProduct] = useState<Product | null>(null);
+    const [dragOverProduct, setDragOverProduct] = useState<string | null>(null);
     const navigate = useNavigate();
 
     const handleOpenModal = (product?: Product) => {
@@ -149,6 +154,74 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
         setInlineEditData({});
     };
 
+    // --- Drag and Drop Handlers ---
+    const handleDragStart = (e: React.DragEvent, product: Product) => {
+        setDraggedProduct(product);
+        e.dataTransfer.effectAllowed = 'move';
+        // Add drag styling
+        const target = e.target as HTMLElement;
+        setTimeout(() => {
+            target.style.opacity = '0.5';
+        }, 0);
+    };
+
+    const handleDragEnd = (e: React.DragEvent) => {
+        const target = e.target as HTMLElement;
+        target.style.opacity = '1';
+        setDraggedProduct(null);
+        setDragOverProduct(null);
+    };
+
+    const handleDragOver = (e: React.DragEvent, productId: string) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (draggedProduct && draggedProduct.id !== productId) {
+            setDragOverProduct(productId);
+        }
+    };
+
+    const handleDragLeave = () => {
+        setDragOverProduct(null);
+    };
+
+    const handleDrop = (e: React.DragEvent, targetProduct: Product) => {
+        e.preventDefault();
+
+        if (!draggedProduct || draggedProduct.id === targetProduct.id) {
+            setDragOverProduct(null);
+            return;
+        }
+
+        // Only allow reordering within same category
+        if (draggedProduct.categoryId !== targetProduct.categoryId) {
+            alert('Só é possível reordenar produtos dentro da mesma categoria');
+            setDragOverProduct(null);
+            return;
+        }
+
+        // Get products in this category and reorder
+        const categoryProducts = products
+            .filter(p => p.categoryId === draggedProduct.categoryId)
+            .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+
+        const draggedIndex = categoryProducts.findIndex(p => p.id === draggedProduct.id);
+        const targetIndex = categoryProducts.findIndex(p => p.id === targetProduct.id);
+
+        // Remove dragged product and insert at new position
+        const reorderedProducts = [...categoryProducts];
+        const [removed] = reorderedProducts.splice(draggedIndex, 1);
+        reorderedProducts.splice(targetIndex, 0, removed);
+
+        // Update display order for all products in category
+        const updatedProducts = reorderedProducts.map((p, idx) => ({
+            ...p,
+            displayOrder: idx
+        }));
+
+        reorderProducts(draggedProduct.categoryId, updatedProducts);
+        setDragOverProduct(null);
+    };
+
     return (
         <div className="min-h-screen bg-gray-100 p-4 pb-20">
             <div className="flex items-center justify-between mb-6">
@@ -165,7 +238,9 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
             </div>
 
             {categories.map(category => {
-                const categoryProducts = products.filter(p => p.categoryId === category.id);
+                const categoryProducts = products
+                    .filter(p => p.categoryId === category.id)
+                    .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
                 if (categoryProducts.length === 0) return null;
 
                 return (
@@ -175,7 +250,19 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                         </h2>
                         <div className="space-y-2">
                             {categoryProducts.map(product => (
-                                <div key={product.id} className="bg-white p-3 rounded-lg shadow-sm">
+                                <div
+                                    key={product.id}
+                                    className={`bg-white p-3 rounded-lg shadow-sm transition-all duration-200 ${dragOverProduct === product.id
+                                            ? 'border-2 border-purple-500 border-dashed bg-purple-50'
+                                            : 'border-2 border-transparent'
+                                        } ${draggedProduct?.id === product.id ? 'opacity-50' : ''}`}
+                                    draggable={inlineEditId !== product.id}
+                                    onDragStart={(e) => handleDragStart(e, product)}
+                                    onDragEnd={handleDragEnd}
+                                    onDragOver={(e) => handleDragOver(e, product.id)}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={(e) => handleDrop(e, product)}
+                                >
                                     {inlineEditId === product.id ? (
                                         <div className="flex flex-col gap-2">
                                             <div className="flex gap-3 items-start">
@@ -225,6 +312,13 @@ export const ProductsPage: React.FC<ProductsPageProps> = ({
                                         </div>
                                     ) : (
                                         <div className="flex gap-3">
+                                            {/* Drag Handle */}
+                                            <div
+                                                className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                                title="Arraste para reordenar"
+                                            >
+                                                <GripVertical size={20} />
+                                            </div>
                                             <img
                                                 src={product.image}
                                                 alt={product.name}

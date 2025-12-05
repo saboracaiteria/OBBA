@@ -22,6 +22,7 @@ export interface Product {
   image: string;
   categoryId: string;
   groupIds?: string[]; // IDs of ProductGroups attached to this product
+  displayOrder?: number; // Order for sorting products within category
 }
 
 export interface Category {

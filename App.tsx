@@ -154,6 +154,7 @@ interface AppContextType {
   addProduct: (product: Product) => void;
   updateProduct: (product: Product) => void;
   deleteProduct: (id: string) => void;
+  reorderProducts: (categoryId: string, products: Product[]) => void;
 
   addCategory: (category: Category) => void;
   updateCategory: (category: Category) => void;
@@ -291,10 +292,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { data } = await supabase.from('products').select(`
       *,
       product_group_relations (group_id)
-    `);
+    `).order('display_order', { ascending: true });
 
     if (data) {
-      // Mapear para o formato interno (adicionar groupIds)
+      // Mapear para o formato interno (adicionar groupIds e displayOrder)
       const mappedProducts: Product[] = data.map(p => ({
         id: p.id,
         name: p.name,
@@ -302,7 +303,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         price: p.price,
         image: p.image,
         categoryId: p.category_id,
-        groupIds: p.product_group_relations?.map((r: any) => r.group_id) || []
+        groupIds: p.product_group_relations?.map((r: any) => r.group_id) || [],
+        displayOrder: p.display_order ?? 0
       }));
       setProducts(mappedProducts);
     }
@@ -480,6 +482,21 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const deleteProduct = async (id: string) => {
     await supabase.from('products').delete().eq('id', id);
+  };
+
+  const reorderProducts = async (categoryId: string, reorderedProducts: Product[]) => {
+    // Optimistic update: update local state immediately
+    setProducts(prev => {
+      const otherProducts = prev.filter(p => p.categoryId !== categoryId);
+      return [...otherProducts, ...reorderedProducts];
+    });
+
+    // Update each product's display_order in Supabase
+    for (const product of reorderedProducts) {
+      await supabase.from('products').update({
+        display_order: product.displayOrder
+      }).eq('id', product.id);
+    }
   };
 
   const addCategory = async (c: Category) => {
@@ -735,7 +752,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <AppContext.Provider value={{
       products, categories, groups, cart, settings, coupons, orders, adminRole, isSidebarOpen,
       addToCart, removeFromCart, updateCartQuantity, updateCartNote, clearCart,
-      addProduct, updateProduct, deleteProduct,
+      addProduct, updateProduct, deleteProduct, reorderProducts,
       addCategory, updateCategory, deleteCategory,
       addGroup, updateGroup, deleteGroup,
       addCoupon, updateCoupon, deleteCoupon,
@@ -2909,7 +2926,7 @@ const ExitModal = ({ isOpen, onClose, onConfirm }: { isOpen: boolean; onClose: (
 const AppContent = () => {
   const {
     categories, addCategory, updateCategory, deleteCategory,
-    products, addProduct, updateProduct, deleteProduct,
+    products, addProduct, updateProduct, deleteProduct, reorderProducts,
     groups, orders, loading
   } = useApp();
 
@@ -2989,6 +3006,7 @@ const AppContent = () => {
             addProduct={addProduct}
             updateProduct={updateProduct}
             deleteProduct={deleteProduct}
+            reorderProducts={reorderProducts}
           />
         } />
 
