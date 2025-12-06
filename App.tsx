@@ -883,8 +883,8 @@ const Sidebar = () => {
             </button>
           ))}
           <div className="border-t border-gray-100 my-2" />
-          <button onClick={() => setShowPassword(true)} className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-600 flex items-center gap-2">
-            <LockIcon size={18} /> Painel Administrativo
+          <button onClick={() => setShowPassword(true)} className="w-full text-left px-4 py-3 hover:bg-gray-100 text-gray-600 flex items-center justify-center gap-2">
+            <LockIcon size={24} />
           </button>
         </div>
       </div>
@@ -1751,8 +1751,8 @@ const AdminPanel = () => {
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Painel {adminRole === 'admin' ? 'Administrativo' : 'Funcionário'}</h1>
-        <button onClick={() => { setAdminRole(null); navigate('/'); }} className="text-red-600 flex items-center gap-1 font-bold">
+        <div></div>
+        <button onClick={() => { setAdminRole(null); navigate('/'); }} className="text-red-600 flex items-center gap-2 font-bold p-2 hover:bg-red-50 rounded-lg transition-colors">
           <LogOut size={20} /> Sair
         </button>
       </div>
